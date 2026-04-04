@@ -2,8 +2,13 @@ substitutions:
   probe_interval: 60s
   relay_off_time: 45s
   startup_grace: 10min
+  startup_grace_seconds: "600"
   recovery_grace: 10min
+  recovery_grace_seconds: "600"
+  max_stage_grace_seconds: "14400"
+  max_auto_cycle_stage: "5"
   failure_threshold: "4"
+  success_threshold: "3"
 
 # COULD SIMPLIFY WITH SOMETHING LIKE THIS: https://graha.ms/posts/blog/2023-05-08-esphome-autorestart/
 
@@ -25,6 +30,9 @@ esphome:
               - delay: ${relay_off_time}
               - switch.turn_on: relay
               - lambda: |-
+                  id(last_power_cycle) = (int) id(plug_uptime).state;
+                  id(failed_requests) = 0;
+                  id(consecutive_successes) = 0;
                   id(cycle_in_progress) = false;
                   ESP_LOGI("internet_watchdog", "Recovered interrupted %s power cycle after reboot", id(last_cycle_reason).c_str());
             else:
@@ -459,10 +467,14 @@ script:
       - lambda: |-
           id(failed_requests) = 0;
           id(consecutive_successes) += 1;
+          if (id(consecutive_successes) >= ${success_threshold} && id(auto_cycle_stage) != 0) {
+            id(auto_cycle_stage) = 0;
+            ESP_LOGI("internet_watchdog", "Reset automatic cycle stage after %d successful probes", id(consecutive_successes));
+          }
 
           int now = (int) id(plug_uptime).state;
-          int last_power_cycle_seconds = now - id(last_power_cycle);
-          ESP_LOGD("internet_watchdog", "%d consecutive failed requests; %d power cycles; %d seconds of uptime; %d seconds since last power cycle", id(failed_requests), id(power_cycle_cnt), now, last_power_cycle_seconds);
+          int seconds_since_power_restore = now - id(last_power_cycle);
+          ESP_LOGD("internet_watchdog", "%d consecutive failed requests; %d power cycles; stage %d; %d seconds of uptime; %d seconds since power restore", id(failed_requests), id(power_cycle_cnt), id(auto_cycle_stage), now, seconds_since_power_restore);
 
     #   - logger.log:
     #     level: DEBUG
@@ -486,57 +498,54 @@ script:
       - lambda: |-
           int now = (int) id(plug_uptime).state;
           id(consecutive_successes) = 0;
-          /*
-          Repeat power cycling can be really aggressive, especially since the power is down for 45 seconds but that is asynchronous to
-          the HTTP timer. (Ie, the next HTTP request will happen 15 seconds after the power is cycled.) And we don't expect internet to be
-          working while the routers boot back up.
-          Failed HTTP requests within the first 90 seconds *after* the power cycle is completed won't increment the failed requests counter.
-          Realistically, this means the first 2 minutes.
-          */
-          int last_power_cycle_seconds = now - id(last_power_cycle);
-          if (last_power_cycle_seconds < (45 + 90)) {
-            ESP_LOGI("internet_watchdog", "Request failed but last power cycle was only %d seconds ago so this doesn't even count", last_power_cycle_seconds);
+
+          if (id(cycle_in_progress) || id(request_power_cycle).is_running()) {
+            ESP_LOGD("internet_watchdog", "Ignoring failed probe while a power cycle is still in progress");
+            return;
+          }
+
+          // Stage 0 is the initial boot grace; later stages double the powered-on wait and cap at 4 hours.
+          int stage_wait_seconds;
+          if (id(auto_cycle_stage) == 0) {
+            stage_wait_seconds = ${startup_grace_seconds};
+          } else {
+            stage_wait_seconds = ${startup_grace_seconds} * (1 << id(auto_cycle_stage));
+            if (stage_wait_seconds > ${max_stage_grace_seconds}) {
+              stage_wait_seconds = ${max_stage_grace_seconds};
+            }
+          }
+
+          int required_powered_on_seconds = stage_wait_seconds;
+          if (${recovery_grace_seconds} > required_powered_on_seconds) {
+            required_powered_on_seconds = ${recovery_grace_seconds};
+          }
+
+          int seconds_since_power_restore = now - id(last_power_cycle);
+          if (seconds_since_power_restore < required_powered_on_seconds) {
+            ESP_LOGI("internet_watchdog", "Request failed but the relay has only been powered for %d seconds; waiting for the %d second grace window for stage %d", seconds_since_power_restore, required_powered_on_seconds, id(auto_cycle_stage));
             return;
           }
 
           id(failed_requests) += 1;
 
-          ESP_LOGI("internet_watchdog", "Request Failed! %d consecutive failed requests; %d power cycles; %d seconds of uptime; %d seconds since last power cycle", id(failed_requests), id(power_cycle_cnt), now, last_power_cycle_seconds);
+          ESP_LOGI("internet_watchdog", "Request Failed! %d consecutive failed requests; %d power cycles; stage %d; %d seconds of uptime; %d seconds since power restore", id(failed_requests), id(power_cycle_cnt), id(auto_cycle_stage), now, seconds_since_power_restore);
 
-          if (id(failed_requests) >= ${failure_threshold}) {
-            if (! id(relay).state) {
-              ESP_LOGD("internet_watchdog", "Skipping power cycle because switch is currently off");
-              return;
-            }
-
-            if (now < (5 * 60)) {
-              ESP_LOGD("internet_watchdog", "Skipping power cycle during first 5 minutes after boot");
-              return;
-            }
-
-            /*
-            A simple backkoff strategy.
-            After the first power cycle, if the internet is actually down then power cycling frequently doesn't seem
-            to be working, and is disruptive to local devices. If the internet isn't down (false negative) then power cycling
-            is disruptive to actual connectivity.
-            *After* the first 3 consecutive failed requests and 10 minutes after boot (above), only powercycle if the failed
-            request count (aka number of minutes) is a power of 2: 2 (skipped), 4, 8, 16, 32, 64, 128, 256, 512
-            That's total minutes, not minutes since last power cycle. E.g, 32 happens 16 minutes after previous reboot.
-            After 512 consecutive minutes, reboot every 4 hours -- so 752, 992, etc....
-            This can overlap with the initial 5 minute wait. E.g., if all requests fail then first power cycle is after 8 minutes.
-            */
-            int fr = id(failed_requests);
-            bool pow_of_two = fr && (( fr & (fr - 1)) == 0);
-            bool should_reset = (fr <= 512 && pow_of_two) || (fr > 512 && (fr - 512) % 240 == 0);
-
-            if (! should_reset) {
-              ESP_LOGD("internet_watchdog", "Skipping power cycle because %d is not a power of 2 or every 4 hours after 8.5 hours ((x - 512) %% 240 == 0)", fr);
-              return;
-            }
-
-            ESP_LOGI("internet_watchdog", "Power cycling the relay after %d consecutive failures", fr);
-            id(request_power_cycle)->execute("watchdog", true);
+          if (id(failed_requests) < ${failure_threshold}) {
+            return;
           }
+
+          if (!id(relay).state) {
+            ESP_LOGD("internet_watchdog", "Skipping automatic power cycle because the relay is currently off");
+            return;
+          }
+
+          if (id(request_power_cycle).is_running()) {
+            ESP_LOGD("internet_watchdog", "Skipping automatic power cycle because the cycle script is already running");
+            return;
+          }
+
+          ESP_LOGI("internet_watchdog", "Power cycling the relay after %d consecutive failures at stage %d", id(failed_requests), id(auto_cycle_stage));
+          id(request_power_cycle)->execute("watchdog", true);
 
   - id: request_power_cycle
     mode: single
@@ -558,14 +567,20 @@ script:
           }
 
           int now = (int) id(plug_uptime).state;
-          id(last_power_cycle) = now;
+          // Advance the automatic retry stage before power drops so reboot recovery keeps the next backoff.
+          if (automatic && id(auto_cycle_stage) < ${max_auto_cycle_stage}) {
+            id(auto_cycle_stage) += 1;
+          }
           id(power_cycle_cnt) += 1;
+          id(failed_requests) = 0;
+          id(consecutive_successes) = 0;
           id(last_cycle_reason) = reason;
           id(cycle_in_progress) = true;
-          ESP_LOGI("internet_watchdog", "Starting %s power cycle at %d seconds uptime", reason.c_str(), now);
+          ESP_LOGI("internet_watchdog", "Starting %s power cycle at %d seconds uptime (automatic=%s, stage=%d)", reason.c_str(), now, automatic ? "true" : "false", id(auto_cycle_stage));
       - switch.turn_off: relay
       - delay: ${relay_off_time}
       - switch.turn_on: relay
       - lambda: |-
+          id(last_power_cycle) = (int) id(plug_uptime).state;
           id(cycle_in_progress) = false;
-          ESP_LOGI("internet_watchdog", "Completed %s power cycle", id(last_cycle_reason).c_str());
+          ESP_LOGI("internet_watchdog", "Completed %s power cycle; recovery timer restarted at %d seconds uptime", id(last_cycle_reason).c_str(), id(last_power_cycle));
