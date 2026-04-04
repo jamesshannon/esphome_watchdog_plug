@@ -183,6 +183,15 @@ sensor:
     lambda: |-
       return id(last_http_duration_ms);
 
+  - platform: template
+    name: Self Reboots
+    id: self_reboot_count_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(self_reboot_count);
+
   # - platform: template
   #   id: testtesttest
   #   name: "Power Cycles"
@@ -241,6 +250,22 @@ globals:
     restore_value: yes
     max_restore_data_length: 32
     initial_value: '"startup"'
+
+  - id: self_reboot_attempted
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
+  - id: self_reboot_count
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: last_self_reboot_reason
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 32
+    initial_value: '"none"'
 
 interval:
   - interval: ${probe_interval}
@@ -391,6 +416,13 @@ binary_sensor:
     lambda: |-
       return id(cycle_in_progress);
 
+  - platform: template
+    name: Self Reboot Attempted
+    id: self_reboot_attempted_sensor
+    entity_category: diagnostic
+    lambda: |-
+      return id(self_reboot_attempted);
+
 text_sensor:
   - platform: template
     name: Last Probe Result
@@ -407,6 +439,14 @@ text_sensor:
     update_interval: 10s
     lambda: |-
       return {id(last_cycle_reason)};
+
+  - platform: template
+    name: Last Self Reboot Reason
+    id: last_self_reboot_reason_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      return {id(last_self_reboot_reason)};
 
 light:
   - platform: binary
