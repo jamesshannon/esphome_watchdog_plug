@@ -195,6 +195,24 @@ sensor:
     lambda: |-
       return id(self_reboot_count);
 
+  - platform: template
+    name: Recent Events Count
+    id: recent_event_count_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(recent_event_count);
+
+  - platform: template
+    name: Journal Events Count
+    id: journal_event_count_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(journal_event_count);
+
   # - platform: template
   #   id: testtesttest
   #   name: "Power Cycles"
@@ -274,6 +292,84 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+
+  - id: recent_event_head
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: recent_event_count
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: recent_event_0
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_1
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_2
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_3
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_4
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_5
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_6
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_7
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: journal_event_head
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: journal_event_count
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: journal_event_0
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 96
+    initial_value: '""'
+
+  - id: journal_event_1
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 96
+    initial_value: '""'
+
+  - id: journal_event_2
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 96
+    initial_value: '""'
 
 interval:
   - interval: ${probe_interval}
@@ -457,6 +553,140 @@ text_sensor:
     lambda: |-
       return {id(last_self_reboot_reason)};
 
+  - platform: template
+    name: Latest Event
+    id: latest_event_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      if (id(recent_event_count) == 0) {
+        return {"none"};
+      }
+
+      int slot = id(recent_event_head) - 1;
+      if (slot < 0) {
+        slot += 8;
+      }
+
+      switch (slot) {
+        case 0: return {id(recent_event_0)};
+        case 1: return {id(recent_event_1)};
+        case 2: return {id(recent_event_2)};
+        case 3: return {id(recent_event_3)};
+        case 4: return {id(recent_event_4)};
+        case 5: return {id(recent_event_5)};
+        case 6: return {id(recent_event_6)};
+        case 7: return {id(recent_event_7)};
+        default: return {"invalid"};
+      }
+
+  - platform: template
+    name: Recent Events
+    id: recent_events_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      if (id(recent_event_count) == 0) {
+        return {"none"};
+      }
+
+      std::string out;
+      for (int offset = 0; offset < id(recent_event_count); offset++) {
+        int slot = id(recent_event_head) - 1 - offset;
+        if (slot < 0) {
+          slot += 8;
+        }
+
+        std::string entry;
+        switch (slot) {
+          case 0: entry = id(recent_event_0); break;
+          case 1: entry = id(recent_event_1); break;
+          case 2: entry = id(recent_event_2); break;
+          case 3: entry = id(recent_event_3); break;
+          case 4: entry = id(recent_event_4); break;
+          case 5: entry = id(recent_event_5); break;
+          case 6: entry = id(recent_event_6); break;
+          case 7: entry = id(recent_event_7); break;
+          default: entry = "invalid"; break;
+        }
+
+        if (entry.empty()) {
+          continue;
+        }
+
+        if (!out.empty()) {
+          out += " | ";
+        }
+        out += entry;
+      }
+
+      if (out.empty()) {
+        return {"none"};
+      }
+      return {out};
+
+  - platform: template
+    name: Latest Journal Event
+    id: latest_journal_event_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      if (id(journal_event_count) == 0) {
+        return {"none"};
+      }
+
+      int slot = id(journal_event_head) - 1;
+      if (slot < 0) {
+        slot += 3;
+      }
+
+      switch (slot) {
+        case 0: return {id(journal_event_0)};
+        case 1: return {id(journal_event_1)};
+        case 2: return {id(journal_event_2)};
+        default: return {"invalid"};
+      }
+
+  - platform: template
+    name: Critical Event Journal
+    id: critical_event_journal_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      if (id(journal_event_count) == 0) {
+        return {"none"};
+      }
+
+      std::string out;
+      for (int offset = 0; offset < id(journal_event_count); offset++) {
+        int slot = id(journal_event_head) - 1 - offset;
+        if (slot < 0) {
+          slot += 3;
+        }
+
+        std::string entry;
+        switch (slot) {
+          case 0: entry = id(journal_event_0); break;
+          case 1: entry = id(journal_event_1); break;
+          case 2: entry = id(journal_event_2); break;
+          default: entry = "invalid"; break;
+        }
+
+        if (entry.empty()) {
+          continue;
+        }
+
+        if (!out.empty()) {
+          out += " | ";
+        }
+        out += entry;
+      }
+
+      if (out.empty()) {
+        return {"none"};
+      }
+      return {out};
+
 light:
   - platform: binary
     internal: true
@@ -491,6 +721,55 @@ output:
 
 
 script:
+  - id: record_event
+    mode: queued
+    parameters:
+      event: string
+      persist: bool
+    then:
+      - lambda: |-
+          char formatted[96];
+          int now = (int) id(plug_uptime).state;
+          snprintf(formatted, sizeof(formatted), "u%05d s%d %s", now, id(auto_cycle_stage), event.c_str());
+          std::string entry(formatted);
+
+          auto set_recent = [&](int slot, const std::string &value) {
+            switch (slot) {
+              case 0: id(recent_event_0) = value; break;
+              case 1: id(recent_event_1) = value; break;
+              case 2: id(recent_event_2) = value; break;
+              case 3: id(recent_event_3) = value; break;
+              case 4: id(recent_event_4) = value; break;
+              case 5: id(recent_event_5) = value; break;
+              case 6: id(recent_event_6) = value; break;
+              case 7: id(recent_event_7) = value; break;
+            }
+          };
+
+          auto set_journal = [&](int slot, const std::string &value) {
+            switch (slot) {
+              case 0: id(journal_event_0) = value; break;
+              case 1: id(journal_event_1) = value; break;
+              case 2: id(journal_event_2) = value; break;
+            }
+          };
+
+          set_recent(id(recent_event_head), entry);
+          id(recent_event_head) = (id(recent_event_head) + 1) % 8;
+          if (id(recent_event_count) < 8) {
+            id(recent_event_count) += 1;
+          }
+
+          if (!persist) {
+            return;
+          }
+
+          set_journal(id(journal_event_head), entry);
+          id(journal_event_head) = (id(journal_event_head) + 1) % 3;
+          if (id(journal_event_count) < 3) {
+            id(journal_event_count) += 1;
+          }
+
   - id: make_http_request
     then:
       - http_request.get:
