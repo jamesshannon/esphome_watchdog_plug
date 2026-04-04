@@ -1,3 +1,10 @@
+substitutions:
+  probe_interval: 60s
+  relay_off_time: 45s
+  startup_grace: 10min
+  recovery_grace: 10min
+  failure_threshold: "4"
+
 # COULD SIMPLIFY WITH SOMETHING LIKE THIS: https://graha.ms/posts/blog/2023-05-08-esphome-autorestart/
 
 esphome:
@@ -46,7 +53,7 @@ ota:
     then:
       - logger.log: "Switching relay off for 45 seconds before rebooting"
       - switch.turn_off: relay
-      - delay: 45s
+      - delay: ${relay_off_time}
       - switch.turn_off: relay
 
 
@@ -93,6 +100,61 @@ sensor:
     name: Plug Uptime
     internal: true
 
+  - platform: template
+    name: Failed Requests
+    id: failed_requests_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(failed_requests);
+
+  - platform: template
+    name: Consecutive Successes
+    id: consecutive_successes_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(consecutive_successes);
+
+  - platform: template
+    name: Power Cycles
+    id: power_cycle_cnt_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(power_cycle_cnt);
+
+  - platform: template
+    name: Auto Cycle Stage
+    id: auto_cycle_stage_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(auto_cycle_stage);
+
+  - platform: template
+    name: Last HTTP Status
+    id: last_http_status_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(last_http_status);
+
+  - platform: template
+    name: Last HTTP Duration
+    id: last_http_duration_ms_sensor
+    entity_category: diagnostic
+    unit_of_measurement: ms
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(last_http_duration_ms);
+
   # - platform: template
   #   id: testtesttest
   #   name: "Power Cycles"
@@ -116,13 +178,48 @@ globals:
     restore_value: no
     initial_value: '0'
 
+  - id: consecutive_successes
+    type: int
+    restore_value: no
+    initial_value: '0'
+
   - id: failed_requests_no_api_client
     type: int
     restore_value: no
     initial_value: '0'
 
+  - id: auto_cycle_stage
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: cycle_in_progress
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: last_http_status
+    type: int
+    restore_value: no
+    initial_value: '-1'
+
+  - id: last_http_duration_ms
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: last_probe_result
+    type: std::string
+    restore_value: no
+    initial_value: '"startup"'
+
+  - id: last_cycle_reason
+    type: std::string
+    restore_value: no
+    initial_value: '"startup"'
+
 interval:
-  - interval: 1min
+  - interval: ${probe_interval}
     startup_delay: 300s
     then:
       script.execute: make_http_request
@@ -258,6 +355,30 @@ binary_sensor:
       then:
         - switch.toggle: relay
 
+  - platform: template
+    name: Cycle In Progress
+    id: cycle_in_progress_sensor
+    entity_category: diagnostic
+    lambda: |-
+      return id(cycle_in_progress);
+
+text_sensor:
+  - platform: template
+    name: Last Probe Result
+    id: last_probe_result_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      return {id(last_probe_result)};
+
+  - platform: template
+    name: Last Cycle Reason
+    id: last_cycle_reason_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      return {id(last_cycle_reason)};
+
 light:
   - platform: binary
     internal: true
@@ -298,16 +419,24 @@ script:
           url: https://www.google.com/generate_204
           on_response:
             then:
-              script.execute: http_request_success
+              - lambda: |-
+                  id(last_http_status) = response->status_code;
+                  id(last_http_duration_ms) = response->duration_ms;
+              - script.execute: http_request_success
           on_error:
             then:
-              script.execute: http_request_failure
+              - lambda: |-
+                  id(last_http_status) = -1;
+                  id(last_http_duration_ms) = 0;
+              - script.execute: http_request_failure
 
   - id: http_request_success
     then:
       - lambda: |-
           id(failed_requests) = 0;
           id(failed_requests_no_api_client) = 0;
+          id(consecutive_successes) += 1;
+          id(last_probe_result) = "success";
 
           int now = (int) id(plug_uptime).state;
           int last_power_cycle_seconds = now - id(last_power_cycle);
@@ -334,6 +463,8 @@ script:
     then:
       - lambda: |-
           int now = (int) id(plug_uptime).state;
+          id(consecutive_successes) = 0;
+          id(last_probe_result) = "failure";
           /*
           Repeat power cycling can be really aggressive, especially since the power is down for 45 seconds but that is asynchronous to
           the HTTP timer. (Ie, the next HTTP request will happen 15 seconds after the power is cycled.) And we don't expect internet to be
@@ -359,7 +490,7 @@ script:
             id(failed_requests_no_api_client) += 1;
           }
 
-          if (id(failed_requests) > 3) {
+          if (id(failed_requests) >= ${failure_threshold}) {
             if (! id(relay).state) {
               ESP_LOGD("internet_watchdog", "Skipping power cycle because switch is currently off");
               return;
@@ -403,14 +534,16 @@ script:
 
   - id: cycle_power
     then:
-      - lambda: id(power_cycle_cnt) += 1;
+      - lambda: |-
+          id(power_cycle_cnt) += 1;
+          id(last_cycle_reason) = "cycle_power";
       - switch.turn_off: relay
-      - delay: 45s
+      - delay: ${relay_off_time}
       - switch.turn_on: relay
 
   # Cycle
   - id: cycle_and_reboot
     then:
       - switch.turn_off: relay
-      - delay: 45s
+      - delay: ${relay_off_time}
       - button.press: reboot_btn
