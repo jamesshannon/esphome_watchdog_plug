@@ -27,6 +27,8 @@ esphome:
               lambda: 'return id(cycle_in_progress);'
             then:
               - logger.log: "Finishing interrupted power cycle with a fresh 45 second off window"
+              - lambda: |-
+                  id(record_event)->execute(std::string("boot_resume_") + id(last_cycle_reason), true);
               - switch.turn_off: relay
               - delay: ${relay_off_time}
               - switch.turn_on: relay
@@ -36,8 +38,13 @@ esphome:
                   id(consecutive_successes) = 0;
                   id(cycle_in_progress) = false;
                   ESP_LOGI("internet_watchdog", "Recovered interrupted %s power cycle after reboot", id(last_cycle_reason).c_str());
+                  id(record_event)->execute(std::string("boot_recovery_complete_") + id(last_cycle_reason), true);
             else:
               - switch.turn_on: relay
+              - script.execute:
+                  id: record_event
+                  event: "boot_normal"
+                  persist: true
     - priority: -100
       then:
         - light.turn_on:
@@ -489,9 +496,17 @@ switch:
     on_turn_on:
       then:
         - light.turn_on: white_led
+        - script.execute:
+            id: record_event
+            event: "relay_on"
+            persist: false
     on_turn_off:
       then:
         - light.turn_off: white_led
+        - script.execute:
+            id: record_event
+            event: "relay_off"
+            persist: false
 
 
 binary_sensor:
@@ -803,10 +818,12 @@ script:
           if (id(consecutive_successes) >= ${success_threshold} && id(self_reboot_attempted)) {
             id(self_reboot_attempted) = false;
             ESP_LOGI("internet_watchdog", "Cleared self-reboot guard after %d successful probes", id(consecutive_successes));
+            id(record_event)->execute("clear_self_reboot_guard", false);
           }
           if (id(consecutive_successes) >= ${success_threshold} && id(auto_cycle_stage) != 0) {
             id(auto_cycle_stage) = 0;
             ESP_LOGI("internet_watchdog", "Reset automatic cycle stage after %d successful probes", id(consecutive_successes));
+            id(record_event)->execute("reset_auto_cycle_stage", false);
           }
 
           int now = (int) id(plug_uptime).state;
@@ -894,12 +911,14 @@ script:
       - lambda: |-
           if (id(cycle_in_progress)) {
             ESP_LOGW("internet_watchdog", "Ignoring power cycle request while another cycle is in progress");
+            id(record_event)->execute("skip_cycle_in_progress", false);
             id(request_power_cycle).stop();
             return;
           }
 
           if (automatic && !id(relay).state) {
             ESP_LOGW("internet_watchdog", "Ignoring automatic power cycle request because the relay is already off");
+            id(record_event)->execute("skip_auto_cycle_relay_off", false);
             id(request_power_cycle).stop();
             return;
           }
@@ -916,11 +935,13 @@ script:
           id(consecutive_successes) = 0;
           id(last_cycle_reason) = reason;
           id(cycle_in_progress) = true;
+          id(record_event)->execute((automatic ? std::string("cycle_auto_") : std::string("cycle_manual_")) + reason, false);
           if (id(self_reboot_pending)) {
             id(self_reboot_attempted) = true;
             id(self_reboot_count) += 1;
             id(last_self_reboot_reason) = reason;
             id(last_probe_result) = "self_reboot_preflight";
+            id(record_event)->execute(std::string("self_reboot_preflight_") + reason, true);
           }
           ESP_LOGI("internet_watchdog", "Starting %s power cycle at %d seconds uptime (automatic=%s, stage=%d, self_reboot=%s)", reason.c_str(), now, automatic ? "true" : "false", id(auto_cycle_stage), id(self_reboot_pending) ? "true" : "false");
       - if:
@@ -940,3 +961,4 @@ script:
                 id(cycle_in_progress) = false;
                 id(self_reboot_pending) = false;
                 ESP_LOGI("internet_watchdog", "Completed %s power cycle; recovery timer restarted at %d seconds uptime", id(last_cycle_reason).c_str(), id(last_power_cycle));
+                id(record_event)->execute(std::string("cycle_complete_") + id(last_cycle_reason), true);
