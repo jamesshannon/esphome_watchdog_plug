@@ -14,10 +14,25 @@ esphome:
     board_build.mcu: esp32c3
     board_build.variant: esp32c3
   on_boot:
-    priority: -100
-    then:
-      light.turn_on:
-        id: device_status_led
+    - priority: 700
+      then:
+        - if:
+            condition:
+              lambda: 'return id(cycle_in_progress);'
+            then:
+              - logger.log: "Finishing interrupted power cycle with a fresh 45 second off window"
+              - switch.turn_off: relay
+              - delay: ${relay_off_time}
+              - switch.turn_on: relay
+              - lambda: |-
+                  id(cycle_in_progress) = false;
+                  ESP_LOGI("internet_watchdog", "Recovered interrupted %s power cycle after reboot", id(last_cycle_reason).c_str());
+            else:
+              - switch.turn_on: relay
+    - priority: -100
+      then:
+        - light.turn_on:
+            id: device_status_led
 
 esp32:
   variant: ESP32C3
@@ -30,6 +45,9 @@ esp32:
       CONFIG_ESP_TASK_WDT_TIMEOUT_S: "10"
 
 safe_mode:
+
+preferences:
+  flash_write_interval: 0s
 
 logger:
   level: DEBUG
@@ -170,7 +188,7 @@ globals:
 
   - id: power_cycle_cnt
     type: int
-    restore_value: no
+    restore_value: yes
     initial_value: '0'
 
   - id: failed_requests
@@ -185,12 +203,12 @@ globals:
 
   - id: auto_cycle_stage
     type: int
-    restore_value: no
+    restore_value: yes
     initial_value: '0'
 
   - id: cycle_in_progress
     type: bool
-    restore_value: no
+    restore_value: yes
     initial_value: 'false'
 
   - id: last_http_status
@@ -210,7 +228,8 @@ globals:
 
   - id: last_cycle_reason
     type: std::string
-    restore_value: no
+    restore_value: yes
+    max_restore_data_length: 32
     initial_value: '"startup"'
 
 interval:
@@ -327,7 +346,7 @@ switch:
     id: relay
     device_class: outlet
     pin: GPIO6
-    restore_mode: ALWAYS_ON
+    restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
         - light.turn_on: white_led
