@@ -375,9 +375,14 @@ binary_sensor:
     name: Button
     filters:
       - delayed_on: 10ms
-    on_press:
+    on_click:
+      min_length: 2s
+      max_length: 10s
       then:
-        - switch.toggle: relay
+        - script.execute:
+            id: request_power_cycle
+            reason: "hardware_button"
+            automatic: false
 
   - platform: template
     name: Cycle In Progress
