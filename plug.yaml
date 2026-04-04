@@ -77,6 +77,8 @@ captive_portal:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  reboot_timeout: 0s
+  power_save_mode: none
   ap:
     ssid: "Plug-Pm-1 Fallback Hotspot"
     password: "tpHfmEHr135L"
@@ -436,20 +438,27 @@ script:
               - lambda: |-
                   id(last_http_status) = response->status_code;
                   id(last_http_duration_ms) = response->duration_ms;
-              - script.execute: http_request_success
+                  if (response->status_code == 204) {
+                    id(last_probe_result) = "http_204";
+                    id(http_request_success).execute();
+                    return;
+                  }
+
+                  id(last_probe_result) = "http_" + std::to_string(response->status_code);
+                  id(http_request_failure).execute();
           on_error:
             then:
               - lambda: |-
                   id(last_http_status) = -1;
                   id(last_http_duration_ms) = 0;
-              - script.execute: http_request_failure
+                  id(last_probe_result) = "request_error";
+                  id(http_request_failure).execute();
 
   - id: http_request_success
     then:
       - lambda: |-
           id(failed_requests) = 0;
           id(consecutive_successes) += 1;
-          id(last_probe_result) = "success";
 
           int now = (int) id(plug_uptime).state;
           int last_power_cycle_seconds = now - id(last_power_cycle);
@@ -477,7 +486,6 @@ script:
       - lambda: |-
           int now = (int) id(plug_uptime).state;
           id(consecutive_successes) = 0;
-          id(last_probe_result) = "failure";
           /*
           Repeat power cycling can be really aggressive, especially since the power is down for 45 seconds but that is asynchronous to
           the HTTP timer. (Ie, the next HTTP request will happen 15 seconds after the power is cycled.) And we don't expect internet to be
