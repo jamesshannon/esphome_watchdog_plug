@@ -1,6 +1,7 @@
 substitutions:
   probe_interval: 60s
   relay_off_time: 45s
+  self_reboot_settle_time: 1s
   startup_grace: 10min
   startup_grace_seconds: "600"
   recovery_grace: 10min
@@ -74,6 +75,7 @@ api:
             id: request_power_cycle
             reason: "api"
             automatic: false
+            allow_self_reboot_preflight: false
 
 ota:
   platform: esphome
@@ -110,6 +112,7 @@ button:
             id: request_power_cycle
             reason: "template_button"
             automatic: false
+            allow_self_reboot_preflight: false
 
 # esp32_ble_tracker:
 
@@ -267,6 +270,11 @@ globals:
     max_restore_data_length: 32
     initial_value: '"none"'
 
+  - id: self_reboot_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
 interval:
   - interval: ${probe_interval}
     startup_delay: 300s
@@ -408,6 +416,7 @@ binary_sensor:
             id: request_power_cycle
             reason: "hardware_button"
             automatic: false
+            allow_self_reboot_preflight: false
 
   - platform: template
     name: Cycle In Progress
@@ -512,6 +521,10 @@ script:
       - lambda: |-
           id(failed_requests) = 0;
           id(consecutive_successes) += 1;
+          if (id(consecutive_successes) >= ${success_threshold} && id(self_reboot_attempted)) {
+            id(self_reboot_attempted) = false;
+            ESP_LOGI("internet_watchdog", "Cleared self-reboot guard after %d successful probes", id(consecutive_successes));
+          }
           if (id(consecutive_successes) >= ${success_threshold} && id(auto_cycle_stage) != 0) {
             id(auto_cycle_stage) = 0;
             ESP_LOGI("internet_watchdog", "Reset automatic cycle stage after %d successful probes", id(consecutive_successes));
@@ -589,14 +602,15 @@ script:
             return;
           }
 
-          ESP_LOGI("internet_watchdog", "Power cycling the relay after %d consecutive failures at stage %d", id(failed_requests), id(auto_cycle_stage));
-          id(request_power_cycle)->execute("watchdog", true);
+          ESP_LOGI("internet_watchdog", "Starting automatic recovery after %d consecutive failures at stage %d", id(failed_requests), id(auto_cycle_stage));
+          id(request_power_cycle)->execute("watchdog", true, true);
 
   - id: request_power_cycle
     mode: single
     parameters:
       reason: string
       automatic: bool
+      allow_self_reboot_preflight: bool
     then:
       - lambda: |-
           if (id(cycle_in_progress)) {
@@ -611,6 +625,8 @@ script:
             return;
           }
 
+          // Use at most one ESP self-reboot per outage, and only while the relay is already intentionally off.
+          id(self_reboot_pending) = automatic && allow_self_reboot_preflight && !id(self_reboot_attempted);
           int now = (int) id(plug_uptime).state;
           // Advance the automatic retry stage before power drops so reboot recovery keeps the next backoff.
           if (automatic && id(auto_cycle_stage) < ${max_auto_cycle_stage}) {
@@ -621,11 +637,27 @@ script:
           id(consecutive_successes) = 0;
           id(last_cycle_reason) = reason;
           id(cycle_in_progress) = true;
-          ESP_LOGI("internet_watchdog", "Starting %s power cycle at %d seconds uptime (automatic=%s, stage=%d)", reason.c_str(), now, automatic ? "true" : "false", id(auto_cycle_stage));
-      - switch.turn_off: relay
-      - delay: ${relay_off_time}
-      - switch.turn_on: relay
-      - lambda: |-
-          id(last_power_cycle) = (int) id(plug_uptime).state;
-          id(cycle_in_progress) = false;
-          ESP_LOGI("internet_watchdog", "Completed %s power cycle; recovery timer restarted at %d seconds uptime", id(last_cycle_reason).c_str(), id(last_power_cycle));
+          if (id(self_reboot_pending)) {
+            id(self_reboot_attempted) = true;
+            id(self_reboot_count) += 1;
+            id(last_self_reboot_reason) = reason;
+            id(last_probe_result) = "self_reboot_preflight";
+          }
+          ESP_LOGI("internet_watchdog", "Starting %s power cycle at %d seconds uptime (automatic=%s, stage=%d, self_reboot=%s)", reason.c_str(), now, automatic ? "true" : "false", id(auto_cycle_stage), id(self_reboot_pending) ? "true" : "false");
+      - if:
+          condition:
+            lambda: 'return id(self_reboot_pending);'
+          then:
+            - switch.turn_off: relay
+            - delay: ${self_reboot_settle_time}
+            - logger.log: "Relay is off; rebooting the ESP before finishing the recovery window"
+            - button.press: reboot_btn
+          else:
+            - switch.turn_off: relay
+            - delay: ${relay_off_time}
+            - switch.turn_on: relay
+            - lambda: |-
+                id(last_power_cycle) = (int) id(plug_uptime).state;
+                id(cycle_in_progress) = false;
+                id(self_reboot_pending) = false;
+                ESP_LOGI("internet_watchdog", "Completed %s power cycle; recovery timer restarted at %d seconds uptime", id(last_cycle_reason).c_str(), id(last_power_cycle));
