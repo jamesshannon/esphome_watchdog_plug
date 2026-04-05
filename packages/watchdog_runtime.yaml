@@ -25,20 +25,31 @@ script:
   - id: publish_diagnostics
     then:
       - lambda: |-
-          id(failed_requests_sensor).publish_state(id(failed_requests));
-          id(consecutive_successes_sensor).publish_state(id(consecutive_successes));
-          id(power_cycle_cnt_sensor).publish_state(id(power_cycle_cnt));
-          id(auto_cycle_stage_sensor).publish_state(id(auto_cycle_stage));
-          id(last_http_status_sensor).publish_state(id(last_http_status));
-          id(last_http_duration_ms_sensor).publish_state(id(last_http_duration_ms));
-          id(self_reboot_count_sensor).publish_state(id(self_reboot_count));
-          id(recent_event_count_sensor).publish_state(id(recent_event_count));
-          id(journal_event_count_sensor).publish_state(id(journal_event_count));
-          id(simulate_outage_timeout_sensor).publish_state(id(simulate_outage_timeout_minutes));
-          id(dry_run_timeout_sensor).publish_state(id(dry_run_timeout_minutes));
-          id(last_probe_result_sensor).publish_state(id(last_probe_result));
-          id(last_cycle_reason_sensor).publish_state(id(last_cycle_reason));
-          id(last_self_reboot_reason_sensor).publish_state(id(last_self_reboot_reason));
+          auto publish_numeric = [](auto &sensor, float value) {
+            if (!std::isfinite(sensor.state) || sensor.state != value) {
+              sensor.publish_state(value);
+            }
+          };
+          auto publish_text = [](auto &sensor, const std::string &value) {
+            if (sensor.state != value) {
+              sensor.publish_state(value);
+            }
+          };
+
+          publish_numeric(id(failed_requests_sensor), id(failed_requests));
+          publish_numeric(id(consecutive_successes_sensor), id(consecutive_successes));
+          publish_numeric(id(power_cycle_cnt_sensor), id(power_cycle_cnt));
+          publish_numeric(id(auto_cycle_stage_sensor), id(auto_cycle_stage));
+          publish_numeric(id(last_http_status_sensor), id(last_http_status));
+          publish_numeric(id(last_http_duration_ms_sensor), id(last_http_duration_ms));
+          publish_numeric(id(self_reboot_count_sensor), id(self_reboot_count));
+          publish_numeric(id(recent_event_count_sensor), id(recent_event_count));
+          publish_numeric(id(journal_event_count_sensor), id(journal_event_count));
+          publish_numeric(id(simulate_outage_timeout_sensor), id(simulate_outage_timeout_minutes));
+          publish_numeric(id(dry_run_timeout_sensor), id(dry_run_timeout_minutes));
+          publish_text(id(last_probe_result_sensor), id(last_probe_result));
+          publish_text(id(last_cycle_reason_sensor), id(last_cycle_reason));
+          publish_text(id(last_self_reboot_reason_sensor), id(last_self_reboot_reason));
 
           const std::array<const std::string *, 8> recent_entries = {
             &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
@@ -47,10 +58,10 @@ script:
           const std::array<const std::string *, 3> journal_entries = {
             &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
           };
-          id(latest_event_sensor).publish_state(watchdog_logic::latest_ring(recent_entries, id(recent_event_head), id(recent_event_count)));
-          id(recent_events_sensor).publish_state(watchdog_logic::render_ring(recent_entries, id(recent_event_head), id(recent_event_count)));
-          id(latest_journal_event_sensor).publish_state(watchdog_logic::latest_ring(journal_entries, id(journal_event_head), id(journal_event_count)));
-          id(critical_event_journal_sensor).publish_state(watchdog_logic::render_ring(journal_entries, id(journal_event_head), id(journal_event_count)));
+          publish_text(id(latest_event_sensor), watchdog_logic::latest_ring(recent_entries, id(recent_event_head), id(recent_event_count)));
+          publish_text(id(recent_events_sensor), watchdog_logic::render_ring(recent_entries, id(recent_event_head), id(recent_event_count)));
+          publish_text(id(latest_journal_event_sensor), watchdog_logic::latest_ring(journal_entries, id(journal_event_head), id(journal_event_count)));
+          publish_text(id(critical_event_journal_sensor), watchdog_logic::render_ring(journal_entries, id(journal_event_head), id(journal_event_count)));
 
   - id: handle_boot_recovery
     then:

@@ -15,7 +15,7 @@ esphome:
   name: plug-pm-1
   friendly_name: Plug (PM) 1
   includes:
-    - ../esphome-watchdog/include/watchdog_logic.h
+    - ../esphome_watchdog_plug/include/watchdog_logic.h
   platformio_options:
     board_build.mcu: esp32c3
     board_build.variant: esp32c3
@@ -39,7 +39,7 @@ esp32:
       CONFIG_ESP_TASK_WDT_TIMEOUT_S: "10"
 
 packages:
-  core: !include ../esphome-watchdog/packages/watchdog_core.yaml
-  state: !include ../esphome-watchdog/packages/watchdog_state.yaml
-  components: !include ../esphome-watchdog/packages/watchdog_components.yaml
-  runtime: !include ../esphome-watchdog/packages/watchdog_runtime.yaml
+  core: !include ../esphome_watchdog_plug/packages/watchdog_core.yaml
+  state: !include ../esphome_watchdog_plug/packages/watchdog_state.yaml
+  components: !include ../esphome_watchdog_plug/packages/watchdog_components.yaml
+  runtime: !include ../esphome_watchdog_plug/packages/watchdog_runtime.yaml
