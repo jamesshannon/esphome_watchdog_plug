@@ -26,13 +26,13 @@ script:
     then:
       - lambda: |-
           auto publish_numeric = [](auto &sensor, float value) {
-            if (!std::isfinite(sensor.state) || sensor.state != value) {
-              sensor.publish_state(value);
+            if (!std::isfinite(sensor->state) || sensor->state != value) {
+              sensor->publish_state(value);
             }
           };
           auto publish_text = [](auto &sensor, const std::string &value) {
-            if (sensor.state != value) {
-              sensor.publish_state(value);
+            if (sensor->state != value) {
+              sensor->publish_state(value);
             }
           };
 
