@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -17,6 +18,19 @@ inline std::string format_event_entry(int uptime_seconds, int stage, const std::
   char formatted[96];
   std::snprintf(formatted, sizeof(formatted), "u%05d s%d %s", uptime_seconds, stage, event.c_str());
   return std::string(formatted);
+}
+
+inline int safe_uptime_seconds(float uptime_seconds) {
+  if (!std::isfinite(uptime_seconds) || uptime_seconds < 0.0f) {
+    return 0;
+  }
+
+  constexpr float max_int = 2147483647.0f;
+  if (uptime_seconds > max_int) {
+    return 2147483647;
+  }
+
+  return static_cast<int>(uptime_seconds);
 }
 
 template <size_t N>

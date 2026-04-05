@@ -38,7 +38,7 @@ sensor:
     id: failed_requests_sensor
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(failed_requests);
 
@@ -47,7 +47,7 @@ sensor:
     id: consecutive_successes_sensor
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(consecutive_successes);
 
@@ -56,7 +56,7 @@ sensor:
     id: power_cycle_cnt_sensor
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(power_cycle_cnt);
 
@@ -65,7 +65,7 @@ sensor:
     id: auto_cycle_stage_sensor
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(auto_cycle_stage);
 
@@ -74,7 +74,7 @@ sensor:
     id: last_http_status_sensor
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(last_http_status);
 
@@ -84,7 +84,7 @@ sensor:
     entity_category: diagnostic
     unit_of_measurement: ms
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(last_http_duration_ms);
 
@@ -93,7 +93,7 @@ sensor:
     id: self_reboot_count_sensor
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(self_reboot_count);
 
@@ -102,7 +102,7 @@ sensor:
     id: recent_event_count_sensor
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(recent_event_count);
 
@@ -111,7 +111,7 @@ sensor:
     id: journal_event_count_sensor
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(journal_event_count);
 
@@ -121,7 +121,7 @@ sensor:
     entity_category: diagnostic
     accuracy_decimals: 0
     unit_of_measurement: min
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(simulate_outage_timeout_minutes);
 
@@ -131,7 +131,7 @@ sensor:
     entity_category: diagnostic
     accuracy_decimals: 0
     unit_of_measurement: min
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return id(dry_run_timeout_minutes);
 
@@ -147,11 +147,13 @@ switch:
           id(simulate_outage_enabled) = true;
           id(simulate_outage_timeout_minutes) = 720;
           id(record_event)->execute("simulate_outage_on", true);
+          id(publish_diagnostics)->execute();
     turn_off_action:
       - lambda: |-
           id(simulate_outage_enabled) = false;
           id(simulate_outage_timeout_minutes) = 0;
           id(record_event)->execute("simulate_outage_off", true);
+          id(publish_diagnostics)->execute();
 
   - platform: template
     name: Watchdog Dry Run
@@ -164,11 +166,13 @@ switch:
           id(dry_run_enabled) = true;
           id(dry_run_timeout_minutes) = 720;
           id(record_event)->execute("dry_run_on", true);
+          id(publish_diagnostics)->execute();
     turn_off_action:
       - lambda: |-
           id(dry_run_enabled) = false;
           id(dry_run_timeout_minutes) = 0;
           id(record_event)->execute("dry_run_off", true);
+          id(publish_diagnostics)->execute();
 
   - platform: gpio
     name: Relay
@@ -230,7 +234,7 @@ text_sensor:
     name: Last Probe Result
     id: last_probe_result_sensor
     entity_category: diagnostic
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return {id(last_probe_result)};
 
@@ -238,7 +242,7 @@ text_sensor:
     name: Last Cycle Reason
     id: last_cycle_reason_sensor
     entity_category: diagnostic
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return {id(last_cycle_reason)};
 
@@ -246,7 +250,7 @@ text_sensor:
     name: Last Self Reboot Reason
     id: last_self_reboot_reason_sensor
     entity_category: diagnostic
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       return {id(last_self_reboot_reason)};
 
@@ -254,7 +258,7 @@ text_sensor:
     name: Latest Event
     id: latest_event_sensor
     entity_category: diagnostic
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       const std::array<const std::string *, 8> entries = {
         &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
@@ -266,7 +270,7 @@ text_sensor:
     name: Recent Events
     id: recent_events_sensor
     entity_category: diagnostic
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       const std::array<const std::string *, 8> entries = {
         &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
@@ -278,7 +282,7 @@ text_sensor:
     name: Latest Journal Event
     id: latest_journal_event_sensor
     entity_category: diagnostic
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       const std::array<const std::string *, 3> entries = {
         &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
@@ -289,7 +293,7 @@ text_sensor:
     name: Critical Event Journal
     id: critical_event_journal_sensor
     entity_category: diagnostic
-    update_interval: 10s
+    update_interval: never
     lambda: |-
       const std::array<const std::string *, 3> entries = {
         &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
