@@ -121,6 +121,14 @@ button:
             automatic: false
             allow_self_reboot_preflight: false
 
+  - platform: template
+    name: Run Probe Now
+    id: run_probe_now_btn
+    entity_category: diagnostic
+    on_press:
+      then:
+        - script.execute: make_http_request
+
 # esp32_ble_tracker:
 
 # bluetooth_proxy:
@@ -219,6 +227,26 @@ sensor:
     update_interval: 10s
     lambda: |-
       return id(journal_event_count);
+
+  - platform: template
+    name: Simulated Outage Minutes Remaining
+    id: simulate_outage_timeout_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    unit_of_measurement: min
+    update_interval: 10s
+    lambda: |-
+      return id(simulate_outage_timeout_minutes);
+
+  - platform: template
+    name: Dry Run Minutes Remaining
+    id: dry_run_timeout_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    unit_of_measurement: min
+    update_interval: 10s
+    lambda: |-
+      return id(dry_run_timeout_minutes);
 
   # - platform: template
   #   id: testtesttest
@@ -378,11 +406,60 @@ globals:
     max_restore_data_length: 96
     initial_value: '""'
 
+  - id: simulate_outage_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
+  - id: simulate_outage_timeout_minutes
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: dry_run_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
+  - id: dry_run_timeout_minutes
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
 interval:
   - interval: ${probe_interval}
     startup_delay: 300s
     then:
       script.execute: make_http_request
+
+  - interval: 1min
+    then:
+      - lambda: |-
+          if (id(simulate_outage_enabled)) {
+            if (id(simulate_outage_timeout_minutes) > 0) {
+              id(simulate_outage_timeout_minutes) -= 1;
+            }
+            if (id(simulate_outage_timeout_minutes) <= 0) {
+              id(simulate_outage_enabled) = false;
+              id(simulate_outage_timeout_minutes) = 0;
+              id(record_event)->execute("simulate_outage_timeout", true);
+            }
+          } else if (id(simulate_outage_timeout_minutes) != 0) {
+            id(simulate_outage_timeout_minutes) = 0;
+          }
+
+          if (id(dry_run_enabled)) {
+            if (id(dry_run_timeout_minutes) > 0) {
+              id(dry_run_timeout_minutes) -= 1;
+            }
+            if (id(dry_run_timeout_minutes) <= 0) {
+              id(dry_run_enabled) = false;
+              id(dry_run_timeout_minutes) = 0;
+              id(record_event)->execute("dry_run_timeout", true);
+            }
+          } else if (id(dry_run_timeout_minutes) != 0) {
+            id(dry_run_timeout_minutes) = 0;
+          }
 
 
 
@@ -487,6 +564,40 @@ interval:
 #     change_mode_every: 4
 
 switch:
+  - platform: template
+    name: Simulate Internet Outage
+    id: simulate_outage_switch
+    entity_category: config
+    lambda: |-
+      return id(simulate_outage_enabled);
+    turn_on_action:
+      - lambda: |-
+          id(simulate_outage_enabled) = true;
+          id(simulate_outage_timeout_minutes) = 720;
+          id(record_event)->execute("simulate_outage_on", true);
+    turn_off_action:
+      - lambda: |-
+          id(simulate_outage_enabled) = false;
+          id(simulate_outage_timeout_minutes) = 0;
+          id(record_event)->execute("simulate_outage_off", true);
+
+  - platform: template
+    name: Watchdog Dry Run
+    id: dry_run_switch
+    entity_category: config
+    lambda: |-
+      return id(dry_run_enabled);
+    turn_on_action:
+      - lambda: |-
+          id(dry_run_enabled) = true;
+          id(dry_run_timeout_minutes) = 720;
+          id(record_event)->execute("dry_run_on", true);
+    turn_off_action:
+      - lambda: |-
+          id(dry_run_enabled) = false;
+          id(dry_run_timeout_minutes) = 0;
+          id(record_event)->execute("dry_run_off", true);
+
   - platform: gpio
     name: Relay
     id: relay
