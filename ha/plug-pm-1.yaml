@@ -1,0 +1,46 @@
+substitutions:
+  watchdog_repo_dir: "../esphome-watchdog"
+  probe_interval: 60s
+  relay_off_time: 45s
+  self_reboot_settle_time: 1s
+  startup_grace: 10min
+  startup_grace_seconds: "600"
+  recovery_grace: 10min
+  recovery_grace_seconds: "600"
+  max_stage_grace_seconds: "14400"
+  max_auto_cycle_stage: "5"
+  failure_threshold: "4"
+  success_threshold: "3"
+
+esphome:
+  name: plug-pm-1
+  friendly_name: Plug (PM) 1
+  includes:
+    - ${watchdog_repo_dir}/include/watchdog_logic.h
+  platformio_options:
+    board_build.mcu: esp32c3
+    board_build.variant: esp32c3
+  on_boot:
+    - priority: 700
+      then:
+        - script.execute: handle_boot_recovery
+    - priority: -100
+      then:
+        - light.turn_on:
+            id: device_status_led
+
+esp32:
+  variant: ESP32C3
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_BT_BLE_50_FEATURES_SUPPORTED: y
+      CONFIG_BT_BLE_42_FEATURES_SUPPORTED: y
+      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "10"
+
+packages:
+  core: !include ${watchdog_repo_dir}/packages/watchdog_core.yaml
+  state: !include ${watchdog_repo_dir}/packages/watchdog_state.yaml
+  components: !include ${watchdog_repo_dir}/packages/watchdog_components.yaml
+  runtime: !include ${watchdog_repo_dir}/packages/watchdog_runtime.yaml
