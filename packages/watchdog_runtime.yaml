@@ -7,14 +7,14 @@ interval:
   - interval: 1min
     then:
       - lambda: |-
-          auto simulated_outage = watchdog::tick_timeout(id(simulate_outage_enabled), id(simulate_outage_timeout_minutes));
+          auto simulated_outage = watchdog_logic::tick_timeout(id(simulate_outage_enabled), id(simulate_outage_timeout_minutes));
           id(simulate_outage_enabled) = simulated_outage.enabled;
           id(simulate_outage_timeout_minutes) = simulated_outage.remaining_minutes;
           if (simulated_outage.expired) {
             id(record_event)->execute("simulate_outage_timeout", true);
           }
 
-          auto dry_run = watchdog::tick_timeout(id(dry_run_enabled), id(dry_run_timeout_minutes));
+          auto dry_run = watchdog_logic::tick_timeout(id(dry_run_enabled), id(dry_run_timeout_minutes));
           id(dry_run_enabled) = dry_run.enabled;
           id(dry_run_timeout_minutes) = dry_run.remaining_minutes;
           if (dry_run.expired) {
@@ -63,14 +63,14 @@ script:
             &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
           };
 
-          std::string entry = watchdog::format_event_entry(
+          std::string entry = watchdog_logic::format_event_entry(
             static_cast<int>(id(plug_uptime).state),
             id(auto_cycle_stage),
             event
           );
-          watchdog::push_ring(recent_entries, id(recent_event_head), id(recent_event_count), entry);
+          watchdog_logic::push_ring(recent_entries, id(recent_event_head), id(recent_event_count), entry);
           if (persist) {
-            watchdog::push_ring(journal_entries, id(journal_event_head), id(journal_event_count), entry);
+            watchdog_logic::push_ring(journal_entries, id(journal_event_head), id(journal_event_count), entry);
           }
 
   - id: make_http_request
@@ -113,12 +113,12 @@ script:
       - lambda: |-
           id(failed_requests) = 0;
           id(consecutive_successes) += 1;
-          if (watchdog::should_clear_self_reboot_guard(id(consecutive_successes), ${success_threshold}, id(self_reboot_attempted))) {
+          if (watchdog_logic::should_clear_self_reboot_guard(id(consecutive_successes), ${success_threshold}, id(self_reboot_attempted))) {
             id(self_reboot_attempted) = false;
             ESP_LOGI("internet_watchdog", "Cleared self-reboot guard after %d successful probes", id(consecutive_successes));
             id(record_event)->execute("clear_self_reboot_guard", false);
           }
-          if (watchdog::should_reset_auto_cycle_stage(id(consecutive_successes), ${success_threshold}, id(auto_cycle_stage))) {
+          if (watchdog_logic::should_reset_auto_cycle_stage(id(consecutive_successes), ${success_threshold}, id(auto_cycle_stage))) {
             id(auto_cycle_stage) = 0;
             ESP_LOGI("internet_watchdog", "Reset automatic cycle stage after %d successful probes", id(consecutive_successes));
             id(record_event)->execute("reset_auto_cycle_stage", false);
@@ -134,14 +134,14 @@ script:
           int now = static_cast<int>(id(plug_uptime).state);
           id(consecutive_successes) = 0;
 
-          int required_powered_on_seconds = watchdog::required_powered_on_seconds(
+          int required_powered_on_seconds = watchdog_logic::required_powered_on_seconds(
             id(auto_cycle_stage),
             ${startup_grace_seconds},
             ${max_stage_grace_seconds},
             ${recovery_grace_seconds}
           );
           int seconds_since_power_restore = now - id(last_power_cycle);
-          if (watchdog::should_skip_failure(
+          if (watchdog_logic::should_skip_failure(
                 id(cycle_in_progress),
                 id(request_power_cycle).is_running(),
                 seconds_since_power_restore,
@@ -157,7 +157,7 @@ script:
           id(failed_requests) += 1;
           ESP_LOGI("internet_watchdog", "Request Failed! %d consecutive failed requests; %d power cycles; stage %d; %d seconds of uptime; %d seconds since power restore", id(failed_requests), id(power_cycle_cnt), id(auto_cycle_stage), now, seconds_since_power_restore);
 
-          if (!watchdog::should_attempt_auto_cycle(
+          if (!watchdog_logic::should_attempt_auto_cycle(
                 id(failed_requests),
                 ${failure_threshold},
                 id(relay).state,
@@ -200,7 +200,7 @@ script:
 
           id(self_reboot_pending) = automatic && allow_self_reboot_preflight && !id(self_reboot_attempted);
           int now = static_cast<int>(id(plug_uptime).state);
-          id(auto_cycle_stage) = watchdog::next_auto_cycle_stage(id(auto_cycle_stage), ${max_auto_cycle_stage}, automatic);
+          id(auto_cycle_stage) = watchdog_logic::next_auto_cycle_stage(id(auto_cycle_stage), ${max_auto_cycle_stage}, automatic);
           if (!id(dry_run_enabled)) {
             id(power_cycle_cnt) += 1;
           }
@@ -208,13 +208,13 @@ script:
           id(consecutive_successes) = 0;
           id(last_cycle_reason) = reason;
           id(cycle_in_progress) = true;
-          id(record_event)->execute(watchdog::cycle_event_name(automatic, reason), false);
+          id(record_event)->execute(watchdog_logic::cycle_event_name(automatic, reason), false);
           if (id(self_reboot_pending)) {
             id(self_reboot_attempted) = true;
             id(self_reboot_count) += 1;
             id(last_self_reboot_reason) = reason;
             id(last_probe_result) = "self_reboot_preflight";
-            id(record_event)->execute(watchdog::self_reboot_event_name(reason), true);
+            id(record_event)->execute(watchdog_logic::self_reboot_event_name(reason), true);
           }
           ESP_LOGI("internet_watchdog", "Starting %s power cycle at %d seconds uptime (automatic=%s, stage=%d, self_reboot=%s)", reason.c_str(), now, automatic ? "true" : "false", id(auto_cycle_stage), id(self_reboot_pending) ? "true" : "false");
       - if:
@@ -228,7 +228,7 @@ script:
                 id(cycle_in_progress) = false;
                 id(self_reboot_pending) = false;
                 id(last_probe_result) = "dry_run";
-                id(record_event)->execute(watchdog::dry_run_event_name(would_self_reboot, id(last_cycle_reason)), true);
+                id(record_event)->execute(watchdog_logic::dry_run_event_name(would_self_reboot, id(last_cycle_reason)), true);
                 ESP_LOGI("internet_watchdog", "Dry run active; skipping physical %s action and restarting recovery timer at %d seconds uptime", id(last_cycle_reason).c_str(), now);
           else:
             - if:

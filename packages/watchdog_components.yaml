@@ -260,7 +260,7 @@ text_sensor:
         &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
         &id(recent_event_4), &id(recent_event_5), &id(recent_event_6), &id(recent_event_7),
       };
-      return {watchdog::latest_ring(entries, id(recent_event_head), id(recent_event_count))};
+      return {watchdog_logic::latest_ring(entries, id(recent_event_head), id(recent_event_count))};
 
   - platform: template
     name: Recent Events
@@ -272,7 +272,7 @@ text_sensor:
         &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
         &id(recent_event_4), &id(recent_event_5), &id(recent_event_6), &id(recent_event_7),
       };
-      return {watchdog::render_ring(entries, id(recent_event_head), id(recent_event_count))};
+      return {watchdog_logic::render_ring(entries, id(recent_event_head), id(recent_event_count))};
 
   - platform: template
     name: Latest Journal Event
@@ -283,7 +283,7 @@ text_sensor:
       const std::array<const std::string *, 3> entries = {
         &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
       };
-      return {watchdog::latest_ring(entries, id(journal_event_head), id(journal_event_count))};
+      return {watchdog_logic::latest_ring(entries, id(journal_event_head), id(journal_event_count))};
 
   - platform: template
     name: Critical Event Journal
@@ -294,7 +294,7 @@ text_sensor:
       const std::array<const std::string *, 3> entries = {
         &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
       };
-      return {watchdog::render_ring(entries, id(journal_event_head), id(journal_event_count))};
+      return {watchdog_logic::render_ring(entries, id(journal_event_head), id(journal_event_count))};
 
 light:
   - platform: binary

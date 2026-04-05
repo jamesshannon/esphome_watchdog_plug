@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <string>
 
-namespace watchdog {
+namespace watchdog_logic {
 
 template <size_t N>
 using MutableRingView = std::array<std::string *, N>;
@@ -155,4 +155,4 @@ inline std::string dry_run_event_name(bool would_self_reboot, const std::string 
   return std::string(would_self_reboot ? "dry_run_would_self_reboot_" : "dry_run_would_cycle_") + reason;
 }
 
-}  // namespace watchdog
+}  // namespace watchdog_logic
