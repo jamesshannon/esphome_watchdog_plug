@@ -1,0 +1,319 @@
+button:
+  - platform: safe_mode
+    name: Safe Mode
+
+  - platform: restart
+    name: Reboot Switch
+    id: reboot_btn
+
+  - platform: template
+    name: Power Cycle
+    id: power_cycle_btn
+    device_class: restart
+    on_press:
+      then:
+        - script.execute:
+            id: request_power_cycle
+            reason: "template_button"
+            automatic: false
+            allow_self_reboot_preflight: false
+
+  - platform: template
+    name: Run Probe Now
+    id: run_probe_now_btn
+    entity_category: diagnostic
+    on_press:
+      then:
+        - script.execute: make_http_request
+
+sensor:
+  - platform: uptime
+    type: seconds
+    id: plug_uptime
+    name: Plug Uptime
+    internal: true
+
+  - platform: template
+    name: Failed Requests
+    id: failed_requests_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(failed_requests);
+
+  - platform: template
+    name: Consecutive Successes
+    id: consecutive_successes_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(consecutive_successes);
+
+  - platform: template
+    name: Power Cycles
+    id: power_cycle_cnt_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(power_cycle_cnt);
+
+  - platform: template
+    name: Auto Cycle Stage
+    id: auto_cycle_stage_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(auto_cycle_stage);
+
+  - platform: template
+    name: Last HTTP Status
+    id: last_http_status_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(last_http_status);
+
+  - platform: template
+    name: Last HTTP Duration
+    id: last_http_duration_ms_sensor
+    entity_category: diagnostic
+    unit_of_measurement: ms
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(last_http_duration_ms);
+
+  - platform: template
+    name: Self Reboots
+    id: self_reboot_count_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(self_reboot_count);
+
+  - platform: template
+    name: Recent Events Count
+    id: recent_event_count_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(recent_event_count);
+
+  - platform: template
+    name: Journal Events Count
+    id: journal_event_count_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(journal_event_count);
+
+  - platform: template
+    name: Simulated Outage Minutes Remaining
+    id: simulate_outage_timeout_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    unit_of_measurement: min
+    update_interval: 10s
+    lambda: |-
+      return id(simulate_outage_timeout_minutes);
+
+  - platform: template
+    name: Dry Run Minutes Remaining
+    id: dry_run_timeout_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    unit_of_measurement: min
+    update_interval: 10s
+    lambda: |-
+      return id(dry_run_timeout_minutes);
+
+switch:
+  - platform: template
+    name: Simulate Internet Outage
+    id: simulate_outage_switch
+    entity_category: config
+    lambda: |-
+      return id(simulate_outage_enabled);
+    turn_on_action:
+      - lambda: |-
+          id(simulate_outage_enabled) = true;
+          id(simulate_outage_timeout_minutes) = 720;
+          id(record_event)->execute("simulate_outage_on", true);
+    turn_off_action:
+      - lambda: |-
+          id(simulate_outage_enabled) = false;
+          id(simulate_outage_timeout_minutes) = 0;
+          id(record_event)->execute("simulate_outage_off", true);
+
+  - platform: template
+    name: Watchdog Dry Run
+    id: dry_run_switch
+    entity_category: config
+    lambda: |-
+      return id(dry_run_enabled);
+    turn_on_action:
+      - lambda: |-
+          id(dry_run_enabled) = true;
+          id(dry_run_timeout_minutes) = 720;
+          id(record_event)->execute("dry_run_on", true);
+    turn_off_action:
+      - lambda: |-
+          id(dry_run_enabled) = false;
+          id(dry_run_timeout_minutes) = 0;
+          id(record_event)->execute("dry_run_off", true);
+
+  - platform: gpio
+    name: Relay
+    id: relay
+    device_class: outlet
+    pin: GPIO6
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - light.turn_on: white_led
+        - script.execute:
+            id: record_event
+            event: "relay_on"
+            persist: false
+    on_turn_off:
+      then:
+        - light.turn_off: white_led
+        - script.execute:
+            id: record_event
+            event: "relay_off"
+            persist: false
+
+binary_sensor:
+  - platform: gpio
+    internal: true
+    pin:
+      number: GPIO2
+      mode: INPUT_PULLUP
+      inverted: true
+    name: Button
+    filters:
+      - delayed_on: 10ms
+    on_click:
+      min_length: 2s
+      max_length: 10s
+      then:
+        - script.execute:
+            id: request_power_cycle
+            reason: "hardware_button"
+            automatic: false
+            allow_self_reboot_preflight: false
+
+  - platform: template
+    name: Cycle In Progress
+    id: cycle_in_progress_sensor
+    entity_category: diagnostic
+    lambda: |-
+      return id(cycle_in_progress);
+
+  - platform: template
+    name: Self Reboot Attempted
+    id: self_reboot_attempted_sensor
+    entity_category: diagnostic
+    lambda: |-
+      return id(self_reboot_attempted);
+
+text_sensor:
+  - platform: template
+    name: Last Probe Result
+    id: last_probe_result_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      return {id(last_probe_result)};
+
+  - platform: template
+    name: Last Cycle Reason
+    id: last_cycle_reason_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      return {id(last_cycle_reason)};
+
+  - platform: template
+    name: Last Self Reboot Reason
+    id: last_self_reboot_reason_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      return {id(last_self_reboot_reason)};
+
+  - platform: template
+    name: Latest Event
+    id: latest_event_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      const std::array<const std::string *, 8> entries = {
+        &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
+        &id(recent_event_4), &id(recent_event_5), &id(recent_event_6), &id(recent_event_7),
+      };
+      return {watchdog::latest_ring(entries, id(recent_event_head), id(recent_event_count))};
+
+  - platform: template
+    name: Recent Events
+    id: recent_events_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      const std::array<const std::string *, 8> entries = {
+        &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
+        &id(recent_event_4), &id(recent_event_5), &id(recent_event_6), &id(recent_event_7),
+      };
+      return {watchdog::render_ring(entries, id(recent_event_head), id(recent_event_count))};
+
+  - platform: template
+    name: Latest Journal Event
+    id: latest_journal_event_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      const std::array<const std::string *, 3> entries = {
+        &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
+      };
+      return {watchdog::latest_ring(entries, id(journal_event_head), id(journal_event_count))};
+
+  - platform: template
+    name: Critical Event Journal
+    id: critical_event_journal_sensor
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      const std::array<const std::string *, 3> entries = {
+        &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
+      };
+      return {watchdog::render_ring(entries, id(journal_event_head), id(journal_event_count))};
+
+light:
+  - platform: binary
+    internal: true
+    name: White LED
+    id: white_led
+    output: white_output
+    restore_mode: ALWAYS_ON
+
+  - platform: status_led
+    name: "Device Status"
+    id: device_status_led
+    pin:
+      number: GPIO8
+      inverted: True
+    internal: True
+
+output:
+  - id: white_output
+    platform: gpio
+    pin: GPIO7
+    inverted: true

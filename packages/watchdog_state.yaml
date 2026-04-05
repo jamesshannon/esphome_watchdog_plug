@@ -1,0 +1,170 @@
+globals:
+  - id: last_power_cycle
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: power_cycle_cnt
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: failed_requests
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: consecutive_successes
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: auto_cycle_stage
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: cycle_in_progress
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
+  - id: last_http_status
+    type: int
+    restore_value: no
+    initial_value: '-1'
+
+  - id: last_http_duration_ms
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: last_probe_result
+    type: std::string
+    restore_value: no
+    initial_value: '"startup"'
+
+  - id: last_cycle_reason
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 32
+    initial_value: '"startup"'
+
+  - id: self_reboot_attempted
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
+  - id: self_reboot_count
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: last_self_reboot_reason
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 32
+    initial_value: '"none"'
+
+  - id: self_reboot_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: recent_event_head
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: recent_event_count
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: recent_event_0
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_1
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_2
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_3
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_4
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_5
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_6
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: recent_event_7
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: journal_event_head
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: journal_event_count
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: journal_event_0
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 96
+    initial_value: '""'
+
+  - id: journal_event_1
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 96
+    initial_value: '""'
+
+  - id: journal_event_2
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 96
+    initial_value: '""'
+
+  - id: simulate_outage_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
+  - id: simulate_outage_timeout_minutes
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: dry_run_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
+  - id: dry_run_timeout_minutes
+    type: int
+    restore_value: yes
+    initial_value: '0'

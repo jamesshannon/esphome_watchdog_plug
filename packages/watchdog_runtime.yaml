@@ -1,0 +1,251 @@
+interval:
+  - interval: ${probe_interval}
+    startup_delay: 300s
+    then:
+      - script.execute: make_http_request
+
+  - interval: 1min
+    then:
+      - lambda: |-
+          auto simulated_outage = watchdog::tick_timeout(id(simulate_outage_enabled), id(simulate_outage_timeout_minutes));
+          id(simulate_outage_enabled) = simulated_outage.enabled;
+          id(simulate_outage_timeout_minutes) = simulated_outage.remaining_minutes;
+          if (simulated_outage.expired) {
+            id(record_event)->execute("simulate_outage_timeout", true);
+          }
+
+          auto dry_run = watchdog::tick_timeout(id(dry_run_enabled), id(dry_run_timeout_minutes));
+          id(dry_run_enabled) = dry_run.enabled;
+          id(dry_run_timeout_minutes) = dry_run.remaining_minutes;
+          if (dry_run.expired) {
+            id(record_event)->execute("dry_run_timeout", true);
+          }
+
+script:
+  - id: handle_boot_recovery
+    then:
+      - if:
+          condition:
+            lambda: 'return id(cycle_in_progress);'
+          then:
+            - logger.log: "Finishing interrupted power cycle with a fresh 45 second off window"
+            - lambda: |-
+                id(record_event)->execute(std::string("boot_resume_") + id(last_cycle_reason), true);
+            - switch.turn_off: relay
+            - delay: ${relay_off_time}
+            - switch.turn_on: relay
+            - lambda: |-
+                id(last_power_cycle) = static_cast<int>(id(plug_uptime).state);
+                id(failed_requests) = 0;
+                id(consecutive_successes) = 0;
+                id(cycle_in_progress) = false;
+                ESP_LOGI("internet_watchdog", "Recovered interrupted %s power cycle after reboot", id(last_cycle_reason).c_str());
+                id(record_event)->execute(std::string("boot_recovery_complete_") + id(last_cycle_reason), true);
+          else:
+            - switch.turn_on: relay
+            - script.execute:
+                id: record_event
+                event: "boot_normal"
+                persist: true
+
+  - id: record_event
+    mode: queued
+    parameters:
+      event: string
+      persist: bool
+    then:
+      - lambda: |-
+          const std::array<std::string *, 8> recent_entries = {
+            &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
+            &id(recent_event_4), &id(recent_event_5), &id(recent_event_6), &id(recent_event_7),
+          };
+          const std::array<std::string *, 3> journal_entries = {
+            &id(journal_event_0), &id(journal_event_1), &id(journal_event_2),
+          };
+
+          std::string entry = watchdog::format_event_entry(
+            static_cast<int>(id(plug_uptime).state),
+            id(auto_cycle_stage),
+            event
+          );
+          watchdog::push_ring(recent_entries, id(recent_event_head), id(recent_event_count), entry);
+          if (persist) {
+            watchdog::push_ring(journal_entries, id(journal_event_head), id(journal_event_count), entry);
+          }
+
+  - id: make_http_request
+    then:
+      - if:
+          condition:
+            lambda: 'return id(simulate_outage_enabled);'
+          then:
+            - lambda: |-
+                id(last_http_status) = -2;
+                id(last_http_duration_ms) = 0;
+                id(last_probe_result) = "simulated_outage";
+            - script.execute: http_request_failure
+          else:
+            - http_request.get:
+                url: https://www.google.com/generate_204
+                on_response:
+                  then:
+                    - lambda: |-
+                        id(last_http_status) = response->status_code;
+                        id(last_http_duration_ms) = response->duration_ms;
+                        if (response->status_code == 204) {
+                          id(last_probe_result) = "http_204";
+                          id(http_request_success).execute();
+                          return;
+                        }
+
+                        id(last_probe_result) = "http_" + std::to_string(response->status_code);
+                        id(http_request_failure).execute();
+                on_error:
+                  then:
+                    - lambda: |-
+                        id(last_http_status) = -1;
+                        id(last_http_duration_ms) = 0;
+                        id(last_probe_result) = "request_error";
+                        id(http_request_failure).execute();
+
+  - id: http_request_success
+    then:
+      - lambda: |-
+          id(failed_requests) = 0;
+          id(consecutive_successes) += 1;
+          if (watchdog::should_clear_self_reboot_guard(id(consecutive_successes), ${success_threshold}, id(self_reboot_attempted))) {
+            id(self_reboot_attempted) = false;
+            ESP_LOGI("internet_watchdog", "Cleared self-reboot guard after %d successful probes", id(consecutive_successes));
+            id(record_event)->execute("clear_self_reboot_guard", false);
+          }
+          if (watchdog::should_reset_auto_cycle_stage(id(consecutive_successes), ${success_threshold}, id(auto_cycle_stage))) {
+            id(auto_cycle_stage) = 0;
+            ESP_LOGI("internet_watchdog", "Reset automatic cycle stage after %d successful probes", id(consecutive_successes));
+            id(record_event)->execute("reset_auto_cycle_stage", false);
+          }
+
+          int now = static_cast<int>(id(plug_uptime).state);
+          int seconds_since_power_restore = now - id(last_power_cycle);
+          ESP_LOGD("internet_watchdog", "%d consecutive failed requests; %d power cycles; stage %d; %d seconds of uptime; %d seconds since power restore", id(failed_requests), id(power_cycle_cnt), id(auto_cycle_stage), now, seconds_since_power_restore);
+
+  - id: http_request_failure
+    then:
+      - lambda: |-
+          int now = static_cast<int>(id(plug_uptime).state);
+          id(consecutive_successes) = 0;
+
+          int required_powered_on_seconds = watchdog::required_powered_on_seconds(
+            id(auto_cycle_stage),
+            ${startup_grace_seconds},
+            ${max_stage_grace_seconds},
+            ${recovery_grace_seconds}
+          );
+          int seconds_since_power_restore = now - id(last_power_cycle);
+          if (watchdog::should_skip_failure(
+                id(cycle_in_progress),
+                id(request_power_cycle).is_running(),
+                seconds_since_power_restore,
+                required_powered_on_seconds)) {
+            if (id(cycle_in_progress) || id(request_power_cycle).is_running()) {
+              ESP_LOGD("internet_watchdog", "Ignoring failed probe while a power cycle is still in progress");
+            } else {
+              ESP_LOGI("internet_watchdog", "Request failed but the relay has only been powered for %d seconds; waiting for the %d second grace window for stage %d", seconds_since_power_restore, required_powered_on_seconds, id(auto_cycle_stage));
+            }
+            return;
+          }
+
+          id(failed_requests) += 1;
+          ESP_LOGI("internet_watchdog", "Request Failed! %d consecutive failed requests; %d power cycles; stage %d; %d seconds of uptime; %d seconds since power restore", id(failed_requests), id(power_cycle_cnt), id(auto_cycle_stage), now, seconds_since_power_restore);
+
+          if (!watchdog::should_attempt_auto_cycle(
+                id(failed_requests),
+                ${failure_threshold},
+                id(relay).state,
+                id(request_power_cycle).is_running())) {
+            if (id(failed_requests) < ${failure_threshold}) {
+              return;
+            }
+            if (!id(relay).state) {
+              ESP_LOGD("internet_watchdog", "Skipping automatic power cycle because the relay is currently off");
+              return;
+            }
+            ESP_LOGD("internet_watchdog", "Skipping automatic power cycle because the cycle script is already running");
+            return;
+          }
+
+          ESP_LOGI("internet_watchdog", "Starting automatic recovery after %d consecutive failures at stage %d", id(failed_requests), id(auto_cycle_stage));
+          id(request_power_cycle)->execute("watchdog", true, true);
+
+  - id: request_power_cycle
+    mode: single
+    parameters:
+      reason: string
+      automatic: bool
+      allow_self_reboot_preflight: bool
+    then:
+      - lambda: |-
+          if (id(cycle_in_progress)) {
+            ESP_LOGW("internet_watchdog", "Ignoring power cycle request while another cycle is in progress");
+            id(record_event)->execute("skip_cycle_in_progress", false);
+            id(request_power_cycle).stop();
+            return;
+          }
+
+          if (automatic && !id(relay).state) {
+            ESP_LOGW("internet_watchdog", "Ignoring automatic power cycle request because the relay is already off");
+            id(record_event)->execute("skip_auto_cycle_relay_off", false);
+            id(request_power_cycle).stop();
+            return;
+          }
+
+          id(self_reboot_pending) = automatic && allow_self_reboot_preflight && !id(self_reboot_attempted);
+          int now = static_cast<int>(id(plug_uptime).state);
+          id(auto_cycle_stage) = watchdog::next_auto_cycle_stage(id(auto_cycle_stage), ${max_auto_cycle_stage}, automatic);
+          if (!id(dry_run_enabled)) {
+            id(power_cycle_cnt) += 1;
+          }
+          id(failed_requests) = 0;
+          id(consecutive_successes) = 0;
+          id(last_cycle_reason) = reason;
+          id(cycle_in_progress) = true;
+          id(record_event)->execute(watchdog::cycle_event_name(automatic, reason), false);
+          if (id(self_reboot_pending)) {
+            id(self_reboot_attempted) = true;
+            id(self_reboot_count) += 1;
+            id(last_self_reboot_reason) = reason;
+            id(last_probe_result) = "self_reboot_preflight";
+            id(record_event)->execute(watchdog::self_reboot_event_name(reason), true);
+          }
+          ESP_LOGI("internet_watchdog", "Starting %s power cycle at %d seconds uptime (automatic=%s, stage=%d, self_reboot=%s)", reason.c_str(), now, automatic ? "true" : "false", id(auto_cycle_stage), id(self_reboot_pending) ? "true" : "false");
+      - if:
+          condition:
+            lambda: 'return id(dry_run_enabled);'
+          then:
+            - lambda: |-
+                int now = static_cast<int>(id(plug_uptime).state);
+                bool would_self_reboot = id(self_reboot_pending);
+                id(last_power_cycle) = now;
+                id(cycle_in_progress) = false;
+                id(self_reboot_pending) = false;
+                id(last_probe_result) = "dry_run";
+                id(record_event)->execute(watchdog::dry_run_event_name(would_self_reboot, id(last_cycle_reason)), true);
+                ESP_LOGI("internet_watchdog", "Dry run active; skipping physical %s action and restarting recovery timer at %d seconds uptime", id(last_cycle_reason).c_str(), now);
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(self_reboot_pending);'
+                then:
+                  - switch.turn_off: relay
+                  - delay: ${self_reboot_settle_time}
+                  - logger.log: "Relay is off; rebooting the ESP before finishing the recovery window"
+                  - button.press: reboot_btn
+                else:
+                  - switch.turn_off: relay
+                  - delay: ${relay_off_time}
+                  - switch.turn_on: relay
+                  - lambda: |-
+                      id(last_power_cycle) = static_cast<int>(id(plug_uptime).state);
+                      id(cycle_in_progress) = false;
+                      id(self_reboot_pending) = false;
+                      ESP_LOGI("internet_watchdog", "Completed %s power cycle; recovery timer restarted at %d seconds uptime", id(last_cycle_reason).c_str(), id(last_power_cycle));
+                      id(record_event)->execute(std::string("cycle_complete_") + id(last_cycle_reason), true);
