@@ -898,28 +898,38 @@ script:
 
   - id: make_http_request
     then:
-      - http_request.get:
-          url: https://www.google.com/generate_204
-          on_response:
-            then:
-              - lambda: |-
-                  id(last_http_status) = response->status_code;
-                  id(last_http_duration_ms) = response->duration_ms;
-                  if (response->status_code == 204) {
-                    id(last_probe_result) = "http_204";
-                    id(http_request_success).execute();
-                    return;
-                  }
+      - if:
+          condition:
+            lambda: 'return id(simulate_outage_enabled);'
+          then:
+            - lambda: |-
+                id(last_http_status) = -2;
+                id(last_http_duration_ms) = 0;
+                id(last_probe_result) = "simulated_outage";
+            - script.execute: http_request_failure
+          else:
+            - http_request.get:
+                url: https://www.google.com/generate_204
+                on_response:
+                  then:
+                    - lambda: |-
+                        id(last_http_status) = response->status_code;
+                        id(last_http_duration_ms) = response->duration_ms;
+                        if (response->status_code == 204) {
+                          id(last_probe_result) = "http_204";
+                          id(http_request_success).execute();
+                          return;
+                        }
 
-                  id(last_probe_result) = "http_" + std::to_string(response->status_code);
-                  id(http_request_failure).execute();
-          on_error:
-            then:
-              - lambda: |-
-                  id(last_http_status) = -1;
-                  id(last_http_duration_ms) = 0;
-                  id(last_probe_result) = "request_error";
-                  id(http_request_failure).execute();
+                        id(last_probe_result) = "http_" + std::to_string(response->status_code);
+                        id(http_request_failure).execute();
+                on_error:
+                  then:
+                    - lambda: |-
+                        id(last_http_status) = -1;
+                        id(last_http_duration_ms) = 0;
+                        id(last_probe_result) = "request_error";
+                        id(http_request_failure).execute();
 
   - id: http_request_success
     then:
@@ -1041,7 +1051,9 @@ script:
           if (automatic && id(auto_cycle_stage) < ${max_auto_cycle_stage}) {
             id(auto_cycle_stage) += 1;
           }
-          id(power_cycle_cnt) += 1;
+          if (!id(dry_run_enabled)) {
+            id(power_cycle_cnt) += 1;
+          }
           id(failed_requests) = 0;
           id(consecutive_successes) = 0;
           id(last_cycle_reason) = reason;
@@ -1057,19 +1069,36 @@ script:
           ESP_LOGI("internet_watchdog", "Starting %s power cycle at %d seconds uptime (automatic=%s, stage=%d, self_reboot=%s)", reason.c_str(), now, automatic ? "true" : "false", id(auto_cycle_stage), id(self_reboot_pending) ? "true" : "false");
       - if:
           condition:
-            lambda: 'return id(self_reboot_pending);'
+            lambda: 'return id(dry_run_enabled);'
           then:
-            - switch.turn_off: relay
-            - delay: ${self_reboot_settle_time}
-            - logger.log: "Relay is off; rebooting the ESP before finishing the recovery window"
-            - button.press: reboot_btn
-          else:
-            - switch.turn_off: relay
-            - delay: ${relay_off_time}
-            - switch.turn_on: relay
             - lambda: |-
-                id(last_power_cycle) = (int) id(plug_uptime).state;
+                int now = (int) id(plug_uptime).state;
+                bool would_self_reboot = id(self_reboot_pending);
+                id(last_power_cycle) = now;
                 id(cycle_in_progress) = false;
                 id(self_reboot_pending) = false;
-                ESP_LOGI("internet_watchdog", "Completed %s power cycle; recovery timer restarted at %d seconds uptime", id(last_cycle_reason).c_str(), id(last_power_cycle));
-                id(record_event)->execute(std::string("cycle_complete_") + id(last_cycle_reason), true);
+                id(last_probe_result) = "dry_run";
+                std::string event = would_self_reboot
+                  ? std::string("dry_run_would_self_reboot_") + id(last_cycle_reason)
+                  : std::string("dry_run_would_cycle_") + id(last_cycle_reason);
+                id(record_event)->execute(event, true);
+                ESP_LOGI("internet_watchdog", "Dry run active; skipping physical %s action and restarting recovery timer at %d seconds uptime", id(last_cycle_reason).c_str(), now);
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(self_reboot_pending);'
+                then:
+                  - switch.turn_off: relay
+                  - delay: ${self_reboot_settle_time}
+                  - logger.log: "Relay is off; rebooting the ESP before finishing the recovery window"
+                  - button.press: reboot_btn
+                else:
+                  - switch.turn_off: relay
+                  - delay: ${relay_off_time}
+                  - switch.turn_on: relay
+                  - lambda: |-
+                      id(last_power_cycle) = (int) id(plug_uptime).state;
+                      id(cycle_in_progress) = false;
+                      id(self_reboot_pending) = false;
+                      ESP_LOGI("internet_watchdog", "Completed %s power cycle; recovery timer restarted at %d seconds uptime", id(last_cycle_reason).c_str(), id(last_power_cycle));
+                      id(record_event)->execute(std::string("cycle_complete_") + id(last_cycle_reason), true);
