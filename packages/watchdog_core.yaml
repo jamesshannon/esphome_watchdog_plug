@@ -1,7 +1,11 @@
 safe_mode:
 
 preferences:
-  flash_write_interval: 0s
+  # Persist immediately. Deliberate reboots flush preferences on their own, so
+  # this only matters for crashes and brownouts - where cycle_in_progress must
+  # already be on flash for handle_boot_recovery to finish the off window.
+  # ESPHome coerces 0s to 1ms, so state it as 1ms rather than let it be rewritten.
+  flash_write_interval: 1ms
 
 logger:
   level: DEBUG
