@@ -1,3 +1,24 @@
+# Entry point used by the ESPHome dashboard on Home Assistant.
+#
+# Deployed to /config/esphome/plug-pm-1.yaml, with this repo cloned to
+# /config/esphome_watchdog_plug/ - hence the ../esphome_watchdog_plug/ prefix
+# on every path below.
+#
+# ---------------------------------------------------------------------------
+# DUPLICATE FILE - mirror every change into plug.yaml
+#
+# plug.yaml and ha/plug-pm-1.yaml are kept identical except for the include
+# paths below. They are duplicated deliberately, for two reasons:
+#
+#   1. ESPHome resolves `esphome.includes` relative to the *main* config file,
+#      not the file that declares it, so the watchdog_logic.h path cannot be
+#      moved into a shared package.
+#   2. The ESPHome dashboard can only display and edit files inside its own
+#      config directory. Collapsing this file into a bare `!include` would hide
+#      every tuning knob below from the dashboard UI.
+#
+# tests/check_entrypoint_drift.sh fails if the two files diverge.
+# ---------------------------------------------------------------------------
 substitutions:
   probe_interval: 60s
   relay_off_time: 45s
