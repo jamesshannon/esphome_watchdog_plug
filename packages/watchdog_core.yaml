@@ -39,3 +39,7 @@ wifi:
     ap_timeout: 30min
 
 http_request:
+  # The request runs synchronously on the main loop. watchdog_timeout must stay
+  # above timeout so a slow DNS or connect phase cannot trip the 10s task watchdog.
+  timeout: 10s
+  watchdog_timeout: 30s
