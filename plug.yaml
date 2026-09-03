@@ -20,9 +20,7 @@ substitutions:
   probe_interval: 60s
   relay_off_time: 45s
   self_reboot_settle_time: 1s
-  startup_grace: 10min
   startup_grace_seconds: "600"
-  recovery_grace: 10min
   recovery_grace_seconds: "600"
   max_stage_grace_seconds: "10800"
   max_auto_cycle_stage: "5"
