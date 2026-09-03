@@ -60,6 +60,16 @@ globals:
     restore_value: yes
     initial_value: '0'
 
+  - id: boot_count
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  - id: last_reset_reason
+    type: std::string
+    restore_value: no
+    initial_value: '"unknown"'
+
   - id: last_self_reboot_reason
     type: std::string
     restore_value: yes

@@ -98,6 +98,15 @@ sensor:
       return id(self_reboot_count);
 
   - platform: template
+    name: Boot Count
+    id: boot_count_sensor
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: never
+    lambda: |-
+      return id(boot_count);
+
+  - platform: template
     name: Recent Events Count
     id: recent_event_count_sensor
     entity_category: diagnostic
@@ -253,6 +262,14 @@ text_sensor:
     update_interval: never
     lambda: |-
       return {id(last_self_reboot_reason)};
+
+  - platform: template
+    name: Last Reset Reason
+    id: last_reset_reason_sensor
+    entity_category: diagnostic
+    update_interval: never
+    lambda: |-
+      return {id(last_reset_reason)};
 
   - platform: template
     name: Latest Event

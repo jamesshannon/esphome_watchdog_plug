@@ -80,6 +80,25 @@ void test_stage_and_event_names() {
   expect(watchdog_logic::format_event_entry(123, 2, "cycle_auto_watchdog") == "u00123 s2 cycle_auto_watchdog", "event formatting is stable");
 }
 
+void test_reset_reason_names() {
+  expect(watchdog_logic::reset_reason_name(1) == "poweron", "power-on reset is named");
+  expect(watchdog_logic::reset_reason_name(3) == "sw", "deliberate self-reboot is named");
+  expect(watchdog_logic::reset_reason_name(4) == "panic", "panic reset is named");
+  expect(watchdog_logic::reset_reason_name(6) == "task_wdt", "blocked main loop reset is named");
+  expect(watchdog_logic::reset_reason_name(9) == "brownout", "brownout reset is named");
+  expect(watchdog_logic::reset_reason_name(0) == "unknown", "unknown reset is named");
+  expect(watchdog_logic::reset_reason_name(42) == "reset_42", "unrecognised reset keeps its number");
+
+  // Boot journal entries are built from these names, so they must stay short.
+  for (int reason = 0; reason <= 16; reason++) {
+    expect(watchdog_logic::reset_reason_name(reason).size() <= 12, "reset names stay short");
+  }
+  expect(
+    watchdog_logic::format_event_entry(300, 1, "boot_" + watchdog_logic::reset_reason_name(6)) ==
+      "u00300 s1 boot_task_wdt",
+    "boot journal entry carries the reset reason");
+}
+
 }  // namespace
 
 int main() {
@@ -88,6 +107,7 @@ int main() {
   test_stage_math();
   test_success_and_failure_guards();
   test_stage_and_event_names();
+  test_reset_reason_names();
   std::cout << "watchdog_logic_test: OK\n";
   return 0;
 }

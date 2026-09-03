@@ -6,6 +6,12 @@
 #include <cstdio>
 #include <string>
 
+// esp_reset_reason() lives here on device. Guarded so the host unit tests, which
+// exercise everything below as plain C++, can include this header unchanged.
+#if defined(USE_ESP32) || defined(ESP_PLATFORM)
+#include <esp_system.h>
+#endif
+
 namespace watchdog_logic {
 
 template <size_t N>
@@ -17,6 +23,35 @@ using ConstRingView = std::array<const std::string *, N>;
 inline std::string format_event_entry(int uptime_seconds, int stage, const std::string &event) {
   char formatted[96];
   std::snprintf(formatted, sizeof(formatted), "u%05d s%d %s", uptime_seconds, stage, event.c_str());
+  return std::string(formatted);
+}
+
+// Maps esp_reset_reason_t to a short, journal-safe name. Keyed on the raw int so
+// this stays testable off-device; the ESP_RST_* values are a stable public enum.
+// Anything unrecognised still reports its number rather than being swallowed.
+inline std::string reset_reason_name(int reason) {
+  switch (reason) {
+    case 0: return "unknown";      // ESP_RST_UNKNOWN
+    case 1: return "poweron";      // ESP_RST_POWERON
+    case 2: return "ext";          // ESP_RST_EXT
+    case 3: return "sw";           // ESP_RST_SW      - our own deliberate reboot
+    case 4: return "panic";        // ESP_RST_PANIC   - crash / abort
+    case 5: return "int_wdt";      // ESP_RST_INT_WDT
+    case 6: return "task_wdt";     // ESP_RST_TASK_WDT - blocked main loop
+    case 7: return "wdt";          // ESP_RST_WDT
+    case 8: return "deepsleep";    // ESP_RST_DEEPSLEEP
+    case 9: return "brownout";     // ESP_RST_BROWNOUT
+    case 10: return "sdio";        // ESP_RST_SDIO
+    case 11: return "usb";         // ESP_RST_USB
+    case 12: return "jtag";        // ESP_RST_JTAG
+    case 13: return "efuse";       // ESP_RST_EFUSE
+    case 14: return "pwr_glitch";  // ESP_RST_PWR_GLITCH
+    case 15: return "cpu_lockup";  // ESP_RST_CPU_LOCKUP
+    default: break;
+  }
+
+  char formatted[24];
+  std::snprintf(formatted, sizeof(formatted), "reset_%d", reason);
   return std::string(formatted);
 }
 

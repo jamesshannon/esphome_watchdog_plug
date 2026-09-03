@@ -43,6 +43,7 @@ script:
           publish_numeric(id(last_http_status_sensor), id(last_http_status));
           publish_numeric(id(last_http_duration_ms_sensor), id(last_http_duration_ms));
           publish_numeric(id(self_reboot_count_sensor), id(self_reboot_count));
+          publish_numeric(id(boot_count_sensor), id(boot_count));
           publish_numeric(id(recent_event_count_sensor), id(recent_event_count));
           publish_numeric(id(journal_event_count_sensor), id(journal_event_count));
           publish_numeric(id(simulate_outage_timeout_sensor), id(simulate_outage_timeout_minutes));
@@ -50,6 +51,7 @@ script:
           publish_text(id(last_probe_result_sensor), id(last_probe_result));
           publish_text(id(last_cycle_reason_sensor), id(last_cycle_reason));
           publish_text(id(last_self_reboot_reason_sensor), id(last_self_reboot_reason));
+          publish_text(id(last_reset_reason_sensor), id(last_reset_reason));
 
           const std::array<const std::string *, 8> recent_entries = {
             &id(recent_event_0), &id(recent_event_1), &id(recent_event_2), &id(recent_event_3),
@@ -65,6 +67,10 @@ script:
 
   - id: handle_boot_recovery
     then:
+      - lambda: |-
+          id(boot_count) += 1;
+          id(last_reset_reason) = watchdog_logic::reset_reason_name(static_cast<int>(esp_reset_reason()));
+          ESP_LOGI("internet_watchdog", "Boot %d after a %s reset", id(boot_count), id(last_reset_reason).c_str());
       - if:
           condition:
             lambda: 'return id(cycle_in_progress);'
@@ -85,10 +91,8 @@ script:
                 id(publish_diagnostics)->execute();
           else:
             - switch.turn_on: relay
-            - script.execute:
-                id: record_event
-                event: "boot_normal"
-                persist: true
+            - lambda: |-
+                id(record_event)->execute(std::string("boot_") + id(last_reset_reason), true);
             - script.execute: publish_diagnostics
 
   - id: record_event
