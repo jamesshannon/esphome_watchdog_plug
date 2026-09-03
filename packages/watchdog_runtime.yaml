@@ -131,7 +131,10 @@ script:
             - script.execute: http_request_failure
           else:
             - http_request.get:
-                url: https://www.google.com/generate_204
+                # Android's captive-portal endpoint. Plain HTTP by contract, not by
+                # accident: portal detection only works unencrypted, so this will not
+                # move to HTTPS. A 204 here means nothing intercepted the request.
+                url: http://connectivitycheck.gstatic.com/generate_204
                 on_response:
                   then:
                     - lambda: |-
