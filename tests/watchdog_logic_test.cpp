@@ -45,7 +45,9 @@ void test_timeout_tick() {
 void test_stage_math() {
   expect(watchdog_logic::stage_wait_seconds(0, 600, 14400) == 600, "stage zero uses startup grace");
   expect(watchdog_logic::stage_wait_seconds(1, 600, 14400) == 1200, "stage one doubles grace");
-  expect(watchdog_logic::stage_wait_seconds(5, 600, 14400) == 14400, "stage wait caps at max");
+  expect(watchdog_logic::stage_wait_seconds(4, 600, 10800) == 9600, "stage four stays under the production cap");
+  expect(watchdog_logic::stage_wait_seconds(5, 600, 10800) == 10800, "production cap engages at stage five");
+  expect(watchdog_logic::stage_wait_seconds(6, 600, 10800) == 10800, "stage wait caps at max");
   expect(watchdog_logic::required_powered_on_seconds(0, 600, 14400, 900) == 900, "recovery grace can dominate required time");
   expect(watchdog_logic::required_powered_on_seconds(2, 600, 14400, 600) == 2400, "stage grace can dominate required time");
 }

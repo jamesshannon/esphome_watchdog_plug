@@ -6,7 +6,7 @@ substitutions:
   startup_grace_seconds: "600"
   recovery_grace: 10min
   recovery_grace_seconds: "600"
-  max_stage_grace_seconds: "14400"
+  max_stage_grace_seconds: "10800"
   max_auto_cycle_stage: "5"
   failure_threshold: "4"
   success_threshold: "3"
