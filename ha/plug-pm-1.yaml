@@ -1,8 +1,16 @@
 # Entry point used by the ESPHome dashboard on Home Assistant.
 #
-# Deployed to /config/esphome/plug-pm-1.yaml, with this repo cloned to
-# /config/esphome_watchdog_plug/ - hence the ../esphome_watchdog_plug/ prefix
-# on every path below.
+# Deployed as /config/esphome/plug-pm-1.yaml, a symlink to this file, with the
+# repo cloned to /config/esphome/esphome_watchdog_plug/ - hence the
+# esphome_watchdog_plug/ prefix on every path below.
+#
+# The clone must live INSIDE the dashboard's config directory. The dashboard
+# resolves symlinks and rejects any config path that lands outside that
+# directory (settings.rel_path -> resolve_under_root), so a clone kept beside
+# it fails every editor load with "Invalid configuration filename". Nesting it
+# is safe: the dashboard reserves only .archive, .esphome, .git, .gitignore,
+# .trash, _offloader_remote_build.json, archive and secrets.yaml, it lists only
+# top-level *.yaml as devices, and no code path deletes config-dir subtrees.
 #
 # ---------------------------------------------------------------------------
 # DUPLICATE FILE - mirror every change into plug.yaml
@@ -34,7 +42,7 @@ esphome:
   name: plug-pm-1
   friendly_name: Plug (PM) 1
   includes:
-    - ../esphome_watchdog_plug/include/watchdog_logic.h
+    - esphome_watchdog_plug/include/watchdog_logic.h
   platformio_options:
     board_build.mcu: esp32c3
     board_build.variant: esp32c3
@@ -58,7 +66,7 @@ esp32:
       CONFIG_ESP_TASK_WDT_TIMEOUT_S: "10"
 
 packages:
-  core: !include ../esphome_watchdog_plug/packages/watchdog_core.yaml
-  state: !include ../esphome_watchdog_plug/packages/watchdog_state.yaml
-  components: !include ../esphome_watchdog_plug/packages/watchdog_components.yaml
-  runtime: !include ../esphome_watchdog_plug/packages/watchdog_runtime.yaml
+  core: !include esphome_watchdog_plug/packages/watchdog_core.yaml
+  state: !include esphome_watchdog_plug/packages/watchdog_state.yaml
+  components: !include esphome_watchdog_plug/packages/watchdog_components.yaml
+  runtime: !include esphome_watchdog_plug/packages/watchdog_runtime.yaml

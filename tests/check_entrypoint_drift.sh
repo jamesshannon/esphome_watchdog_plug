@@ -13,7 +13,7 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 2
 
-readonly PREFIX='../esphome_watchdog_plug/'
+readonly PREFIX='esphome_watchdog_plug/'
 readonly REPO_ENTRY='plug.yaml'
 readonly HA_ENTRY='ha/plug-pm-1.yaml'
 
