@@ -24,7 +24,7 @@ api:
 
 ota:
   platform: esphome
-  password: "c9e550ec104cd83f1fcfef5dc5b108a2"
+  password: !secret ota_password
 
 captive_portal:
 
@@ -35,7 +35,7 @@ wifi:
   power_save_mode: none
   ap:
     ssid: "Plug-Pm-1 Fallback Hotspot"
-    password: "tpHfmEHr135L"
+    password: !secret fallback_ap_password
     ap_timeout: 30min
 
 http_request:
